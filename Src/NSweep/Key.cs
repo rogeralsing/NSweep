@@ -163,7 +163,7 @@ namespace NSweep
 
         public static int Compare(Key a, Key b)
         {
-            if (a.length != b.length) throw new Exception("Cannot compare keys of different length.");
+         //   if (a.length != b.length) throw new Exception("Cannot compare keys of different length.");
             int r = memcmp(a.bytes, b.bytes, Math.Min(a.bytes.Length, b.bytes.Length));
             if (r != 0) return r;
             int al = a.bytes.Length, bl = b.bytes.Length;

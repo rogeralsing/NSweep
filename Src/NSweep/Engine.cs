@@ -4,11 +4,12 @@ using System.Linq;
 using System.Text;
 using ProtoBuf;
 using System.IO;
-
+using System.Reactive.Linq;
 namespace NSweep
 {
     public class MessageEventArgs : EventArgs
     {
+        public Message Original { get; set; }
         public Message Message { get; set; }
     }
 
@@ -17,34 +18,38 @@ namespace NSweep
         private string name;
         private string storagePath;
         private int index = 0;
-        private IEnumerable<Message> sourceMessages;
+        private IObservable<Message> sourceMessages;
         private IEnumerator<Message> hashMessages;
         private Message hashMessage;
 
         public event EventHandler<MessageEventArgs> Inserted;
         public event EventHandler<MessageEventArgs> Updated;
         public event EventHandler<MessageEventArgs> Deleted;
-        
-        public Engine(string name, string storagePath, IEnumerable<Message> source)
+
+        public Engine(string name, string storagePath, IEnumerable <Message> source) : this(name,storagePath,source.ToObservable())
+        {
+
+        }
+        public Engine(string name, string storagePath, IObservable<Message> source)
         {
             this.name = name;
             this.storagePath = storagePath;
             this.sourceMessages = source;                      
         }
 
-        public void Sweep()
+        public void Subscribe()
         {
             string hashPath = string.Format("{0}\\{1}.dat", this.storagePath, this.name);
             string writePath = string.Format("{0}\\{1}.foo", this.storagePath, this.name);
 
-            using (var hashStream = new FileStream(hashPath, FileMode.OpenOrCreate))
-            using (var writeStream = new FileStream(writePath, FileMode.Create))
-            {
-                this.hashMessages = GetHashEnumerator(hashStream).GetEnumerator();  
+            var hashStream = new FileStream(hashPath, FileMode.OpenOrCreate);
+            var writeStream = new FileStream(writePath, FileMode.Create);
 
-                GetNextHash();
+            this.hashMessages = GetHashEnumerator(hashStream).GetEnumerator();
 
-                foreach (var sourceMessage in sourceMessages)
+            GetNextHash();
+
+            sourceMessages.Subscribe(sourceMessage =>
                 {
                     var keySource = Key.Fixed(sourceMessage.Key, sourceMessage.Key.Length);
 
@@ -66,7 +71,7 @@ namespace NSweep
                             {
                                 //updated
                                 if (!sourceMessage.Body.SequenceEqual(hashMessage.Body))
-                                    OnUpdated(sourceMessage);
+                                    OnUpdated(sourceMessage,hashMessage);
 
                                 Write(writeStream, sourceMessage);
                                 GetNextHash();
@@ -87,17 +92,31 @@ namespace NSweep
                             }
                         }
                     }
-                }
+                },
 
-                while (hashMessage != null)
+                x =>
                 {
-                    OnDeleted(hashMessage);
-                    GetNextHash();
-                }
-            }
-            
-            File.Delete(hashPath);
-            File.Move(writePath, hashPath);
+                    //TODO: hantera exception
+                    writeStream.Dispose();
+                    hashStream.Dispose();
+
+                }, () =>
+                {
+                    //clean up
+
+                    while (hashMessage != null)
+                    {
+                        OnDeleted(hashMessage);
+                        GetNextHash();
+                    }
+
+                    writeStream.Dispose();
+                    hashStream.Dispose();
+
+                    File.Delete(hashPath);
+                    File.Move(writePath, hashPath);
+
+                });
         }
 
         private void GetNextHash()
@@ -109,10 +128,10 @@ namespace NSweep
                 this.hashMessage = null;
         }
 
-        private void OnUpdated(Message message)
+        private void OnUpdated(Message message,Message original)
         {
             if (Updated != null)
-                Updated(this, new MessageEventArgs { Message = message });
+                Updated(this, new MessageEventArgs { Message = message , Original = original});
         }
 
         private void OnInserted(Message message)
