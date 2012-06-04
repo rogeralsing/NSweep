@@ -150,8 +150,8 @@ namespace NSweep
         {
             index++;
 
-            if (index % 1000 == 0)
-                Console.WriteLine(index);
+            //if (index % 1000 == 0)
+            //    Console.WriteLine(index);
 
             Serializer.SerializeWithLengthPrefix(writeStream, message, PrefixStyle.Fixed32);
         }
